@@ -220,7 +220,7 @@ function bc(o){LS.s('sd_bc',{...o,t:Math.random()});handle(o)}
 function handle(o){if(o.ev!==undefined){EV=o.ev;LS.s('sd_ev',EV);pInit();theme()}
  if(o.msg&&(!o.to||me&&o.to===me.k))banner(o.msg,o.secs||0)}
 addEventListener('storage',e=>{if(!e.newValue)return;if(e.key==='sd_bc')handle(JSON.parse(e.newValue));
- if(e.key==='sd_users'){U=JSON.parse(e.newValue);if(me){me=U[me.k]||me;refresh()}}
+ if(e.key==='sd_users'){U=JSON.parse(e.newValue);if(me&&!U[me.k]){LS.s('sd_note','Ton compte a été supprimé.');LS.s('sd_rm',null);location.reload();return}if(me){me=U[me.k];refresh()}}
  if(e.key==='sd_ev'){EV=JSON.parse(e.newValue);pInit();theme()}});
 addEventListener('pagehide',save);addEventListener('beforeunload',save);
 
@@ -306,18 +306,29 @@ A.pMenu=()=>{openP('Menu',`<label>Sensibilité de la souris <input id="sens" typ
  <h2>Amis</h2>${opt(me.req,k=>`<div class="cd"><span>${U[k].n} veut devenir ton ami</span><button data-a="facc" data-k="${k}">Accepter</button></div>`)}
  ${opt(me.fr,k=>`<div class="cd"><span>${U[k].n}</span><button data-a="inv" data-k="${k}">Inviter au lobby</button></div>`)||'<small>Aucun ami pour l’instant.</small>'}
  <div class="row"><input id="fn" placeholder="Pseudo de l’ami"><button data-a="fadd">Ajouter</button></div>
- <button data-a="out">Se déconnecter</button>`)};
+ <button data-a="out">Se déconnecter</button><div id="dz" style="margin-top:6px"><button class="abtn bad" data-a="dm">🗑️ Supprimer mon compte</button></div>`)};
 A.fadd=()=>{const k=$('#fn').value.trim().toLowerCase(),t=U[k];if(!t||k===me.k)return toast('Joueur introuvable.');if(me.fr.includes(k))return toast('Déjà ami.');
  if(!t.req.includes(me.k))t.req.push(me.k);save();toast('Demande envoyée à '+t.n+'.')};
 A.facc=t=>{const k=t.dataset.k;me.req=me.req.filter(x=>x!==k);me.fr.push(k);U[k].fr.push(me.k);save();A.pMenu()};
 A.inv=t=>{guest=t.dataset.k;refresh();A.close()};
+function delAcc(k){delete U[k];Object.values(U).forEach(u=>{u.fr=u.fr.filter(x=>x!==k);u.req=u.req.filter(x=>x!==k)});if(guest===k)guest=null;if(LS.g('sd_rm',null)===k)LS.s('sd_rm',null);save()}
+A.dm=()=>{if(me.k==='maxence')return toast('Le compte principal Maxence ne peut pas être supprimé.');
+ $('#dz').innerHTML='<div class="hint">Action définitive : pièces, skins, armes et amis seront perdus. Tape ton mot de passe pour confirmer.</div><input id="dpw" type="password" placeholder="Mot de passe" autocomplete="current-password"><div class="row"><button class="abtn bad" data-a="dm2">Supprimer définitivement</button><button data-a="dm0">Annuler</button></div>'};
+A.dm0=()=>A.pMenu();
+A.dm2=async()=>{const h=await hash(me.k+':'+$('#dpw').value);if(h!==me.h)return toast('Mot de passe incorrect.');
+ const k=me.k;delAcc(k);LS.s('sd_note','Ton compte a été supprimé.');LS.s('sd_rm',null);location.reload()};
+A.da=()=>{const v=$('#tg').value;if(v==='*')return toast('Choisis un joueur précis.');if(v==='maxence')return toast('Le compte principal Maxence ne peut pas être supprimé.');
+ $('#dac').innerHTML=`<div class="hint">Supprimer définitivement le compte de ${U[v].n} ? Ses pièces, skins, armes et amis seront perdus.</div><div class="row"><button class="abtn bad" data-a="da2" data-k="${v}">Oui, supprimer</button><button data-a="da0">Annuler</button></div>`};
+A.da0=()=>A.tab({dataset:{t:admT}});
+A.dr=t=>{const k=t.dataset.k;t.outerHTML=`<span class="row"><button class="abtn bad" data-a="da2" data-k="${k}">Confirmer</button><button data-a="da0">Annuler</button></span>`};
+A.da2=t=>{const k=t.dataset.k,n=U[k]&&U[k].n;if(!U[k]||k==='maxence')return;delAcc(k);A.tab({dataset:{t:admT}});toast('Compte de '+n+' supprimé.')};
 A.out=()=>{LS.s('sd_rm',null);save();location.reload()};
 $('#mb').onclick=A.pMenu;
 $('#lobby').onclick=e=>{};
 
 /* Panneau admin */
 const tgs=()=>{const v=$('#tg').value;return(v==='*'?Object.values(U):[U[v]]).filter(Boolean)};
-const TABS={ev:['🎉','Événement'],av:['🧑‍🎤','Avatar'],ar:['🔫','Arme'],pc:['🪙','Pièces'],ab:['📢','Admin abuse'],mo:['🛡️','Modération'],au:['⚙️','Autres'],ad:['👑','Admin']};
+const TABS={ev:['🎉','Événement'],av:['🧑‍🎤','Avatar'],ar:['🔫','Arme'],pc:['🪙','Pièces'],ab:['📢','Admin abuse'],mo:['🛡️','Modération'],au:['⚙️','Autres'],ad:['👑','Admin'],co:['👥','Comptes']};
 let admT='ev';
 const tg=()=>`<label class="fld"><span>Joueur</span><select id="tg"><option value="*">🌍 Global (tous les joueurs)</option>${opt(Object.values(U),u=>`<option value="${u.k}">${u.n}${u.admin?' 👑':''}</option>`)}</select></label>`;
 A.pAdm=()=>{openP('Panneau admin',`<div class="adm"><div class="adm-side">${opt(Object.keys(TABS),k=>`<button data-a="tab" data-t="${k}">${TABS[k][0]} ${TABS[k][1]}</button>`)}<div class="hint" style="margin-top:auto">👥 ${Object.keys(U).length} joueur${Object.keys(U).length>1?'s':''}<br>🎊 ${EV||'aucun événement'}</div></div><div class="adm-main" id="tc"></div></div>`);A.tab({dataset:{t:admT}})};
@@ -330,7 +341,8 @@ A.tab=t=>{const k=admT=t.dataset.t,c=me.cheat;document.querySelectorAll('.adm-si
  ab:`<label class="fld"><span>Message (affiché 5 s à tout le monde)</span><input id="x" placeholder="Ex : maintenance dans quelques minutes"></label><label class="fld"><span>Compte à rebours ensuite (secondes, 0 = aucun)</span><input id="y" type="number" min="0" max="3600" value="10"></label><button class="abtn mg" data-a="sab">📢 Envoyer à tout le monde</button>`,
  mo:tg()+`<button class="abtn bad" data-a="wn">⚠️ Envoyer un avertissement</button><label class="fld"><span>Message au joueur</span><input id="x" placeholder="Ton message"></label><button class="abtn go" data-a="pm">✉️ Envoyer le message</button>`,
  au:`<div class="hint">Ces options s’appliquent à ton compte, dans les parties.</div>${[['fly','🕊️ Voler','Espace pour monter, C pour descendre'],['inv','🛡️ Invincible','Aucun dégât subi'],['x2','💥 Dégâts ×2','Tes dégâts sont doublés']].map(([a,l,d])=>`<label class="sw"><span>${l}<br><small>${d}</small></span><input type="checkbox" data-c="${a}" ${c[a]?'checked':''}><i></i></label>`).join('')}`,
- ad:tg()+`<div class="row"><button class="abtn mg" data-a="mk">👑 Donner les droits admin</button><button class="abtn bad" data-a="rk">✖ Retirer les droits admin</button></div><div class="hint">Admins actuels : ${Object.values(U).filter(u=>u.admin).map(u=>u.n).join(', ')||'aucun'}<br>Le compte Maxence ne peut pas perdre ses droits.</div>`}[k];
+ co:`<div class="hint">Tous les comptes. Clique sur 🗑️ à côté d’un joueur pour supprimer son compte.</div>${opt(Object.values(U),u=>`<div class="cd"><span>${u.n} ${u.admin?'👑':''}<br><small>🪙 ${u.coins} · ${u.skins.length} skins · ${u.weps.length} armes</small></span>${u.k==='maxence'?'<small>🔒 Protégé</small>':`<button class="abtn bad" data-a="dr" data-k="${u.k}">🗑️ Supprimer</button>`}</div>`)}`,
+ ad:tg()+`<div class="row"><button class="abtn mg" data-a="mk">👑 Donner les droits admin</button><button class="abtn bad" data-a="rk">✖ Retirer les droits admin</button></div><div class="hint">Admins actuels : ${Object.values(U).filter(u=>u.admin).map(u=>u.n).join(', ')||'aucun'}<br>Le compte Maxence ne peut pas perdre ses droits.</div><h3 class="sub" style="margin:8px 0 0">Supprimer un compte</h3><div id="dac"><button class="abtn bad" data-a="da">🗑️ Supprimer le compte</button></div>`}[k];
  $('#tc').innerHTML=`<h3 class="sub" style="margin:0">${TABS[k][0]} ${TABS[k][1]}</h3>`+H};
 A.qc=t=>$('#x').value=t.dataset.v;
 A.sev=t=>{bc({ev:t.dataset.v});A.tab({dataset:{t:'ev'}})};
@@ -522,6 +534,7 @@ function loop(){requestAnimationFrame(loop);const dt=Math.min(clock.getDelta(),.
  if(GM&&!GM.over){if(act())step(dt);if(GM.fall)GM.fall.u(dt);GM.rec=(GM.rec||0)*Math.max(0,1-dt*12);gunG.position.z=-.55+GM.rec;gunG.rotation.x=GM.rec*1.4;gunG.visible=GM.P.alive;cam.position.set(P.x,P.y+(GM.P.alive?1.7:.4),P.z);cam.rotation.set(P.pitch,P.yaw,0);ren.render(sc,cam)}
  else if(ren&&me&&LB&&!$('#lobby').hidden){LB.t+=dt;lobbyUpd(dt);ren.render(LB.sc,LB.cam)}}
 loop();
+const nt=LS.g('sd_note',null);if(nt){$('#ae').style.color='var(--ok)';$('#ae').textContent=nt;LS.s('sd_note',null)}
 const rk=LS.g('sd_rm',null);if(rk&&U[rk]){$('#rm').checked=true;enter(rk)}
 document.addEventListener('pointerlockchange',()=>{locked=ren&&document.pointerLockElement===ren.domElement;if(GM&&!GM.over)$('#pause').hidden=locked||GM.nolock||!$('#pan').hidden});
 A.resume=()=>lockReq();A.hadm=()=>{if(!(me.k==='maxence'&&me.admin))return;$('#pause').hidden=true;document.exitPointerLock();firing=false;A.pAdm()};A.quit=()=>endMatch('Partie quittée');
