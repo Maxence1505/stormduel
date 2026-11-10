@@ -204,25 +204,52 @@ input{user-select:text;-webkit-user-select:text}
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.7/dist/umd/supabase.js"></script>
 <script>
 const $=s=>document.querySelector(s),rnd=(a,b)=>a+Math.random()*(b-a);
 const LS={g(k,d){try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}},s(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}};
 let U=LS.g('sd_users',{}),EV=LS.g('sd_ev',''),me=null,guest=null;
-let DBX=null,SYNC={},T0=Date.now(),lastBc=0;
+/* ============================================================
+   SUPABASE - À CONFIGURER
+   1. Va sur https://supabase.com → ton projet → Settings → API
+   2. Copie Project URL et la clé "anon" "public"
+   3. Colle-les ci-dessous
+   4. Dans Supabase → SQL Editor, exécute ce SQL une seule fois :
+
+create table if not exists sd_users (k text primary key, data jsonb not null);
+create table if not exists sd_meta (k text primary key, data jsonb not null);
+alter table sd_users enable row level security;
+alter table sd_meta enable row level security;
+create policy "proto" on sd_users for all using (true) with check (true);
+create policy "proto" on sd_meta for all using (true) with check (true);
+
+   ⚠ Mode prototype : toute personne qui a la clé anon peut lire/modifier.
+   ============================================================ */
+const SUPABASE_URL = 'https://qhlvwmdbrtfclnuergxr.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InFobHZ3bWRicnRmY2xudWVyZ3hyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQzMjkzNzMsImV4cCI6MjEwOTkwNTM3M30.NqVsZL3l8PNt29vA5GxuNwGIwcvh97D0Mh2GZpz_sd0';  // ← COLLE la clé anon (eyJ...) complète ici
+let DBX=null,SB=null,SYNC={},T0=Date.now(),lastBc=0,lastW=0;
 const did=k=>'u_'+[...k].map(c=>/[A-Za-z0-9_\-.~:@+]/.test(c)?c:'~'+c.charCodeAt(0).toString(16)+'~').join('');
-function dbStat(){const e=document.getElementById('dbl');if(e)e.textContent=DBX?'☁️ Base de données en ligne (partagée)':'💾 Base de données locale (ce navigateur)'}
-function dbFail(){if(!DBX)return;DBX=null;dbStat();if(typeof toast==='function')toast('Écriture en ligne refusée : mode local.')}
-function dbPush(){if(!DBX)return;try{for(const k in U){const j=JSON.stringify(U[k]);if(SYNC[k]!==j){SYNC[k]=j;DBX.doc('sd_users/'+did(k)).set(JSON.parse(j)).catch(dbFail)}}
- for(const k in SYNC)if(!U[k]){delete SYNC[k];DBX.doc('sd_users/'+did(k)).delete().catch(dbFail)}}catch(e){dbFail()}}
+function dbStat(){const e=document.getElementById('dbl');if(e)e.textContent=SB?'☁️ Supabase (partagée)':DBX?'☁️ Base de données en ligne (partagée)':'💾 Base de données locale (ce navigateur)'}
+function dbFail(){if(!DBX&&!SB)return;DBX=null;SB=null;dbStat();if(typeof toast==='function')toast('Écriture en ligne refusée : mode local.')}
+function dbPush(){if(!DBX&&!SB)return;try{const rows=[];
+ for(const k in U){const j=JSON.stringify(U[k]);if(SYNC[k]!==j){SYNC[k]=j;if(SB)rows.push({k,data:JSON.parse(j)});else DBX.doc('sd_users/'+did(k)).set(JSON.parse(j)).catch(dbFail)}}
+ if(SB&&rows.length){lastW=Date.now();SB.from('sd_users').upsert(rows).then(r=>{if(r.error)dbFail()})}
+ for(const k in SYNC)if(!U[k]){delete SYNC[k];if(SB){lastW=Date.now();SB.from('sd_users').delete().eq('k',k).then(r=>{if(r.error)dbFail()})}else DBX.doc('sd_users/'+did(k)).delete().catch(dbFail)}}catch(e){dbFail()}}
 const save=()=>{LS.s('sd_users',U);dbPush()};
 const norm=()=>Object.values(U).forEach(u=>{u.inv=u.inv||[];if(u.in===undefined)u.in=null;if(u.snd===undefined)u.snd=true});
-async function dbInit(){try{if(!window.claude||!window.claude.use)return;const d=await window.claude.use('db');if(!d)return;
- let first=true;
- d.collection('sd_users').onSnapshot(snap=>{const seen={};
-  snap.docs.forEach(x=>{const v=x.data();if(v&&v.k){seen[v.k]=1;U[v.k]=JSON.parse(JSON.stringify(v));SYNC[v.k]=JSON.stringify(v)}});
-  if(first){first=false;DBX=d}else for(const k in SYNC)if(!seen[k]){delete U[k];delete SYNC[k]}
-  norm();dbPush();LS.s('sd_users',U);dbStat();
-  if(me){if(!U[me.k]){LS.s('sd_note','Ton compte a été supprimé.');LS.s('sd_rm',null);location.reload();return}me=U[me.k];refresh()}},()=>{});
+function dbApply(list,first){const seen={};
+ list.forEach(v=>{if(v&&v.k){seen[v.k]=1;if(SYNC[v.k]!==undefined&&JSON.stringify(U[v.k])!==SYNC[v.k])return;U[v.k]=JSON.parse(JSON.stringify(v));SYNC[v.k]=JSON.stringify(v)}});
+ if(!first)for(const k in SYNC)if(!seen[k]){delete U[k];delete SYNC[k]}
+ norm();dbPush();LS.s('sd_users',U);dbStat();
+ if(me){if(!U[me.k]){LS.s('sd_note','Ton compte a été supprimé.');LS.s('sd_rm',null);location.reload();return}me=U[me.k];refresh()}}
+async function sbInit(){try{if(!SUPABASE_URL||!SUPABASE_ANON_KEY||!window.supabase)return false;
+ const c=window.supabase.createClient(SUPABASE_URL,SUPABASE_ANON_KEY),r=await c.from('sd_users').select('k,data');if(r.error)return false;
+ SB=c;dbApply(r.data.map(x=>x.data),true);
+ const poll=async()=>{if(!SB)return;try{const a=await SB.from('sd_users').select('k,data');if(a.error)throw 0;if(Date.now()-lastW>1500)dbApply(a.data.map(x=>x.data),false);
+  const m=await SB.from('sd_meta').select('k,data');if(!m.error)m.data.forEach(x=>{const v=x.data;if(x.k==='ev'&&v.ev!==undefined&&v.ev!==EV){EV=v.ev;LS.s('sd_ev',EV);pInit();theme()}if(x.k==='bc'&&v.t>T0&&v.t!==lastBc){lastBc=v.t;handle(v)}})}catch(e){}};
+ setInterval(poll,3500);return true}catch(e){return false}}
+async function dbInit(){if(await sbInit())return;try{if(!window.claude||!window.claude.use)return;const d=await window.claude.use('db');if(!d)return;let first=true;
+ d.collection('sd_users').onSnapshot(snap=>{const list=snap.docs.map(x=>x.data());if(first){first=false;DBX=d;dbApply(list,true)}else dbApply(list,false)},()=>{});
  d.doc('sd_meta/ev').onSnapshot(sn=>{const v=sn.exists&&sn.data();if(v&&v.ev!==undefined&&v.ev!==EV){EV=v.ev;LS.s('sd_ev',EV);pInit();theme()}},()=>{});
  d.doc('sd_meta/bc').onSnapshot(sn=>{const v=sn.exists&&sn.data();if(v&&v.t>T0&&v.t!==lastBc){lastBc=v.t;handle(v)}},()=>{})}catch(e){}}
 async function hash(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return[...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,'0')).join('')}
@@ -237,7 +264,9 @@ const opt=(a,f)=>a.map(f).join('');
 function toast(t){const e=$('#ts');e.textContent=t;e.hidden=false;clearTimeout(toast.t);toast.t=setTimeout(()=>e.hidden=true,2500)}
 function banner(m,secs){const b=$('#bn');b.textContent=m;clearTimeout(banner.a);clearInterval(banner.c);
  banner.a=setTimeout(()=>{if(secs>0){let s=secs;b.textContent=s;banner.c=setInterval(()=>{s--;b.textContent=s>0?s:'';if(s<=0)clearInterval(banner.c)},1000)}else b.textContent=''},5000)}
-function bc(o){const t=Date.now();lastBc=t;LS.s('sd_bc',{...o,t:Math.random()});handle(o);if(DBX){DBX.doc('sd_meta/bc').set({...o,t}).catch(dbFail);if(o.ev!==undefined)DBX.doc('sd_meta/ev').set({ev:o.ev}).catch(dbFail)}}
+function bc(o){const t=Date.now();lastBc=t;LS.s('sd_bc',{...o,t:Math.random()});handle(o);
+ if(SB)SB.from('sd_meta').upsert([{k:'bc',data:{...o,t}}].concat(o.ev!==undefined?[{k:'ev',data:{ev:o.ev}}]:[])).then(r=>{if(r.error)dbFail()});
+ else if(DBX){DBX.doc('sd_meta/bc').set({...o,t}).catch(dbFail);if(o.ev!==undefined)DBX.doc('sd_meta/ev').set({ev:o.ev}).catch(dbFail)}}
 function handle(o){if(o.ev!==undefined){EV=o.ev;LS.s('sd_ev',EV);pInit();theme()}
  if(o.msg&&(!o.to||me&&o.to===me.k))banner(o.msg,o.secs||0)}
 addEventListener('storage',e=>{if(!e.newValue)return;if(e.key==='sd_bc')handle(JSON.parse(e.newValue));
